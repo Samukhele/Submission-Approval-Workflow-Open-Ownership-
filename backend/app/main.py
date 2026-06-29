@@ -34,7 +34,16 @@ async def validation_exception_handler(
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    storage = settings.storage_backend
+    return {
+        "status": "ok",
+        "storage_backend": storage,
+        "google_drive_configured": storage == "google_drive"
+        and bool(settings.google_drive_folder_id)
+        and bool(
+            settings.google_drive_credentials_json or settings.google_drive_credentials_file
+        ),
+    }
 
 
 app.include_router(auth.router, prefix="/api/v1")

@@ -101,7 +101,12 @@ class GoogleDriveStorageBackend(StorageBackend):
         media = MediaIoBaseUpload(io.BytesIO(content), mimetype=mime_type, resumable=True)
         created = (
             self._service.files()
-            .create(body=metadata, media_body=media, fields="id")
+            .create(
+                body=metadata,
+                media_body=media,
+                fields="id",
+                supportsAllDrives=True,
+            )
             .execute()
         )
         return created["id"]
@@ -111,10 +116,10 @@ class GoogleDriveStorageBackend(StorageBackend):
 
         meta = (
             self._service.files()
-            .get(fileId=storage_ref, fields="mimeType")
+            .get(fileId=storage_ref, fields="mimeType", supportsAllDrives=True)
             .execute()
         )
-        request = self._service.files().get_media(fileId=storage_ref)
+        request = self._service.files().get_media(fileId=storage_ref, supportsAllDrives=True)
         buffer = io.BytesIO()
         downloader = MediaIoBaseDownload(buffer, request)
         done = False
@@ -123,7 +128,7 @@ class GoogleDriveStorageBackend(StorageBackend):
         return buffer.getvalue(), meta.get("mimeType", "application/octet-stream")
 
     def delete(self, storage_ref: str) -> None:
-        self._service.files().delete(fileId=storage_ref).execute()
+        self._service.files().delete(fileId=storage_ref, supportsAllDrives=True).execute()
 
 
 _storage_backend: StorageBackend | None = None

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
-from app.models import Application, ApplicationStatus, User, UserRole
+from app.models import Application, ApplicationCategory, ApplicationStatus, User, UserRole
 from app.schemas import ApplicationCreate, ApplicationUpdate, SubmitValidation
 from app.services import audit as audit_service
 from app.services.state_machine import (
@@ -80,7 +80,10 @@ def ensure_owner(user: User, app: Application) -> None:
 
 
 def list_applications(
-    db: Session, user: User, status_filter: ApplicationStatus | None = None
+    db: Session,
+    user: User,
+    status_filter: ApplicationStatus | None = None,
+    category_filter: ApplicationCategory | None = None,
 ) -> list[dict]:
     query = db.query(Application).options(joinedload(Application.owner))
     if user.role == UserRole.APPLICANT:
@@ -95,6 +98,8 @@ def list_applications(
         ):
             return []
         query = query.filter(Application.status == status_filter)
+    if category_filter:
+        query = query.filter(Application.category == category_filter)
     apps = query.order_by(Application.updated_at.desc()).all()
     return [_application_to_dict(app) for app in apps]
 

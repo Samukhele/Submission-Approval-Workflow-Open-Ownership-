@@ -43,7 +43,7 @@ export function FileAttachment({
       <div className="action-row file-attachment-actions">
         <button
           type="button"
-          className="button button-small button-primary"
+          className="btn-primary btn-sm"
           disabled={loading !== null}
           onClick={() => void openFile(false)}
         >
@@ -51,7 +51,7 @@ export function FileAttachment({
         </button>
         <button
           type="button"
-          className="button button-small"
+          className="btn-secondary btn-sm"
           disabled={loading !== null}
           onClick={() => void openFile(true)}
         >
@@ -66,12 +66,14 @@ export function FileAttachment({
 export function AttachmentPanel({
   applicationId,
   fileName,
+  embedded = false,
 }: {
   applicationId: string
   fileName: string | null
+  embedded?: boolean
 }) {
-  return (
-    <section className="card attachment-card">
+  const content = (
+    <>
       <h2>Attachment</h2>
       {fileName ? (
         <>
@@ -81,6 +83,12 @@ export function AttachmentPanel({
       ) : (
         <p className="muted empty-attachment">No attachment was submitted with this application.</p>
       )}
-    </section>
+    </>
   )
+
+  if (embedded) {
+    return <div className="attachment-panel">{content}</div>
+  }
+
+  return <section className="card attachment-card">{content}</section>
 }

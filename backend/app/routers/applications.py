@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_applicant, require_reviewer
 from app.database import get_db
-from app.models import ApplicationStatus, User
+from app.models import ApplicationCategory, ApplicationStatus, User
 from app.schemas import (
     ApplicationCreate,
     ApplicationResponse,
@@ -26,8 +26,9 @@ def list_applications(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
     status: ApplicationStatus | None = Query(default=None),
+    category: ApplicationCategory | None = Query(default=None),
 ):
-    return app_service.list_applications(db, current_user, status)
+    return app_service.list_applications(db, current_user, status, category)
 
 
 @router.post("", response_model=ApplicationResponse, status_code=201)

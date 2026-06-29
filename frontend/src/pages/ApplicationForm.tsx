@@ -121,7 +121,7 @@ export function ApplicationForm() {
 
         <p className="muted">Provide at least an amount or a date before submitting.</p>
 
-        <button type="submit" disabled={createMutation.isPending}>
+        <button type="submit" className="btn-primary" disabled={createMutation.isPending}>
           {createMutation.isPending ? 'Saving…' : 'Save draft'}
         </button>
       </form>

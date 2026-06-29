@@ -1,9 +1,10 @@
-import { Link, Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { Loading } from './Feedback'
+import { Sidebar } from './layout/Sidebar'
 
 export function Layout() {
-  const { user, loading, logout } = useAuth()
+  const { user, loading } = useAuth()
 
   if (loading) return <Loading />
 
@@ -12,28 +13,12 @@ export function Layout() {
   }
 
   return (
-    <div className="layout">
-      <header className="topbar">
-        <div className="brand">Approval Workflow</div>
-        <nav aria-label="Main navigation">
-          {user.role === 'APPLICANT' ? (
-            <>
-              <Link to="/">My applications</Link>
-              <Link to="/applications/new">New</Link>
-            </>
-          ) : (
-            <Link to="/review">Review queue</Link>
-          )}
-        </nav>
-        <div className="user-menu">
-          <span className="muted">{user.email}</span>
-          <button type="button" onClick={logout}>
-            Log out
-          </button>
+    <div className="app-shell">
+      <Sidebar />
+      <main className="main-content page-enter">
+        <div className="container">
+          <Outlet />
         </div>
-      </header>
-      <main className="container">
-        <Outlet />
       </main>
     </div>
   )

@@ -1,37 +1,32 @@
-services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: approval_workflow
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d approval_workflow"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  api:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    env_file:
-      - ./backend/.env
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/approval_workflow
-      SECRET_KEY: dev-secret-change-in-production
-      STORAGE_BACKEND: local
-      UPLOAD_DIR: /app/uploads
-    volumes:
-      - ./uploads:/app/uploads
-      - ./secrets:/secrets:ro
-    depends_on:
-      db:
-        condition: service_healthy
-
-volumes:
-  pgdata:
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: approval_workflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d approval_workflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - ./uploads:/app/uploads
+      - ./secrets:/secrets:ro
+
+volumes:
+  pgdata:
+

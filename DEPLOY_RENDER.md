@@ -2,6 +2,27 @@
 
 Follow these steps in order after the code changes for Render are committed.
 
+## Monorepo layout (frontend + backend)
+
+This repo has two app folders at the root:
+
+```
+/
+├── backend/     → Render Web Service (Docker)
+├── frontend/    → Render Static Site
+├── render.yaml  → optional one-click blueprint
+└── docker-compose.yml  → local dev only
+```
+
+Render treats each folder as a **separate service** from the **same GitHub repo**. Set **Root Directory** so Render only builds/deploys the folder you need.
+
+| Service | Root Directory | Runtime |
+|---------|----------------|---------|
+| API (backend) | `backend` | Docker |
+| Frontend | `frontend` | Static Site |
+
+Only changes inside that folder trigger auto-deploy for that service (when root directory is set).
+
 ## Prerequisites
 
 - GitHub account
@@ -46,25 +67,33 @@ In Render: **Account Settings → Git Provider → Connect GitHub** and authoriz
 3. Plan: Free
 4. Copy the **Internal Database URL**
 
-### Backend API
+### Backend API (your current screen)
 
-1. **New +** → **Web Service** → select repo
-2. Name: `approval-workflow-api`
-3. Root Directory: `backend`
-4. Runtime: **Docker**
-5. Health Check Path: `/health`
-6. Environment variables:
+1. **New +** → **Web Service** → select repo `Samukhele/Submission-Approval-Workflow-Open-Ownership-`
+2. Settings:
 
-```
-DATABASE_URL=<internal postgres url>
-SECRET_KEY=<random hex string>
-STORAGE_BACKEND=google_drive
-GOOGLE_DRIVE_CREDENTIALS_JSON=<json>
-GOOGLE_DRIVE_FOLDER_ID=<folder id>
-CORS_ORIGINS=https://approval-workflow.onrender.com
-```
+| Field | Value |
+|-------|-------|
+| Name | `approval-workflow-api` (or keep yours) |
+| **Root Directory** | **`backend`** ← required for monorepo |
+| Runtime | **Docker** |
+| Branch | `main` |
+| Health Check Path | `/health` |
 
-7. Deploy and note URL: `https://approval-workflow-api.onrender.com`
+3. Do **not** set a custom build/start command — Docker uses [`backend/Dockerfile`](backend/Dockerfile), which runs migrations, seed, and uvicorn on `$PORT`.
+
+4. **Environment variables** (Environment tab — never commit these):
+
+| Key | Value |
+|-----|-------|
+| `DATABASE_URL` | Render Postgres **Internal** URL |
+| `SECRET_KEY` | Generate in Render or `openssl rand -hex 32` |
+| `CORS_ORIGINS` | Frontend URL after deploy (e.g. `https://your-app.onrender.com`) |
+| `STORAGE_BACKEND` | `google_drive` or `local` |
+| `GOOGLE_DRIVE_CREDENTIALS_JSON` | Service account JSON (if using Drive) |
+| `GOOGLE_DRIVE_FOLDER_ID` | Drive folder ID (if using Drive) |
+
+5. Deploy → note API URL: `https://YOUR-SERVICE.onrender.com`
 
 ### Frontend
 
@@ -129,3 +158,34 @@ If you used the blueprint and left `VITE_API_URL` empty:
 | File upload fails | Verify Google Drive folder is shared with service account email |
 | 502 on first request | Free tier cold start — wait and retry |
 | Database connection error | Use **Internal** database URL on the API service |
+
+## CI/CD
+
+### What Render does automatically (CD)
+
+Once GitHub is connected, Render **auto-deploys** on every push to `main`:
+
+- Push changes under `backend/` → API service rebuilds
+- Push changes under `frontend/` → Static site rebuilds
+
+No separate deploy pipeline is required for basic CD. In the service **Settings → Build & Deploy**, confirm **Auto-Deploy** is enabled.
+
+### GitHub Actions (CI)
+
+This repo includes [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+- **Backend job:** Postgres service container → `alembic upgrade head` → `pytest`
+- **Frontend job:** `npm ci` → `npm run build`
+
+Runs on every push and pull request to `main`. Fix failing tests before merging — Render will still deploy if auto-deploy is on, so CI acts as a quality gate.
+
+### Optional: deploy only after CI passes
+
+Render does not wait for GitHub Actions by default. To gate deploys:
+
+1. Disable auto-deploy on the Render service
+2. Add a deploy hook URL from Render to GitHub Actions (run only on `main` after tests pass)
+
+Or use **Render Blueprint** ([`render.yaml`](render.yaml)) to provision DB + API + frontend together.
+
+## Troubleshooting

@@ -40,7 +40,7 @@ export function ApplicantDashboard() {
     <div>
       <div className="page-header">
         <h1>My Applications</h1>
-        <Link className="button" to="/applications/new">
+        <Link className="btn-primary" to="/applications/new">
           New application
         </Link>
       </div>
@@ -68,14 +68,14 @@ export function ApplicantDashboard() {
                 </Link>
                 <Link
                   to={`/applications/${app.id}`}
-                  className="button button-small"
+                  className="btn-secondary btn-sm"
                 >
                   {app.status === 'DRAFT' ? 'View' : 'Track status'}
                 </Link>
                 {app.status === 'DRAFT' && (
                   <button
                     type="button"
-                    className="button button-small button-primary"
+                    className="btn-primary btn-sm"
                     disabled={submitMutation.isPending}
                     onClick={() => void handleQuickSubmit(app)}
                   >

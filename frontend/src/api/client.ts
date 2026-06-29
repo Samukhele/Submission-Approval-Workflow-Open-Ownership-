@@ -113,8 +113,11 @@ export const api = {
 
   me: () => request<User>('/api/v1/auth/me'),
 
-  listApplications: (status?: string) => {
-    const query = status ? `?status=${status}` : ''
+  listApplications: (params?: { status?: string; category?: string }) => {
+    const search = new URLSearchParams()
+    if (params?.status) search.set('status', params.status)
+    if (params?.category) search.set('category', params.category)
+    const query = search.toString() ? `?${search.toString()}` : ''
     return request<Application[]>(`/api/v1/applications${query}`)
   },
 

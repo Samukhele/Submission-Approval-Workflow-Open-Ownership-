@@ -42,6 +42,7 @@ export function LoginPage() {
         <input
           id="email"
           type="email"
+          className="input"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -52,13 +53,14 @@ export function LoginPage() {
         <input
           id="password"
           type="password"
+          className="input"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           autoComplete="current-password"
         />
 
-        <button type="submit" disabled={submitting || loading}>
+        <button type="submit" className="btn-primary" disabled={submitting || loading}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
 

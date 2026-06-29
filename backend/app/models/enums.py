@@ -21,6 +21,7 @@ class ApplicationCategory(str, enum.Enum):
     MARKETING = "marketing"
     IT = "it"
     HR = "hr"
+    FINANCE = "finance"
 
 
 class TransitionAction(str, enum.Enum):

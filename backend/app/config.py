@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +34,48 @@ class Settings(BaseSettings):
         if isinstance(value, str) and value.startswith("postgres://"):
             return value.replace("postgres://", "postgresql://", 1)
         return value
+
+    @field_validator("google_drive_credentials_json", mode="before")
+    @classmethod
+    def normalize_credentials_json(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped or stripped in {
+            "your_full_json_file_content",
+            "paste_service_account_json_here",
+        }:
+            return None
+        return stripped
+
+    @field_validator("google_drive_folder_id", mode="before")
+    @classmethod
+    def normalize_folder_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped or stripped in {
+            "your_folder_id",
+            "your-shared-drive-folder-id",
+            "paste_folder_id_here",
+        }:
+            return None
+        return stripped
+
+    @model_validator(mode="after")
+    def validate_google_drive_config(self) -> "Settings":
+        if self.storage_backend != "google_drive":
+            return self
+        if not self.google_drive_folder_id:
+            raise ValueError(
+                "GOOGLE_DRIVE_FOLDER_ID is required when STORAGE_BACKEND=google_drive"
+            )
+        if not self.google_drive_credentials_json and not self.google_drive_credentials_file:
+            raise ValueError(
+                "GOOGLE_DRIVE_CREDENTIALS_JSON (or GOOGLE_DRIVE_CREDENTIALS_FILE) "
+                "is required when STORAGE_BACKEND=google_drive"
+            )
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

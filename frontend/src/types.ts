@@ -7,7 +7,7 @@ export type ApplicationStatus =
   | 'APPROVED'
   | 'REJECTED'
 
-export type ApplicationCategory = 'operations' | 'marketing' | 'it' | 'hr'
+export type ApplicationCategory = 'operations' | 'marketing' | 'it' | 'hr' | 'finance'
 
 export interface User {
   id: string
@@ -62,10 +62,11 @@ export function formatApiError(error: unknown): string {
 }
 
 export const CATEGORIES: { value: ApplicationCategory; label: string }[] = [
-  { value: 'operations', label: 'Operations' },
-  { value: 'marketing', label: 'Marketing' },
   { value: 'it', label: 'IT' },
+  { value: 'marketing', label: 'Marketing' },
+  { value: 'finance', label: 'Finance' },
   { value: 'hr', label: 'HR' },
+  { value: 'operations', label: 'Operations' },
 ]
 
 export function getCategoryLabel(category: ApplicationCategory): string {

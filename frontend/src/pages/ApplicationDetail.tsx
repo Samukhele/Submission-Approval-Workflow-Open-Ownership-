@@ -21,6 +21,7 @@ export function ApplicationDetail() {
   const [editAmount, setEditAmount] = useState('')
   const [editDate, setEditDate] = useState('')
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
+  const [commentEditorExpanded, setCommentEditorExpanded] = useState(false)
 
   const appQuery = useQuery({
     queryKey: ['application', id],
@@ -98,6 +99,7 @@ export function ApplicationDetail() {
     onSuccess: () => {
       setMessage({ type: 'success', text: 'Status updated.' })
       setComment('')
+      setCommentEditorExpanded(false)
       invalidate()
     },
     onError: (err) => {
@@ -139,6 +141,23 @@ export function ApplicationDetail() {
     setEditDate(app.requested_date ?? '')
   }, [app])
 
+  useEffect(() => {
+    if (!commentEditorExpanded) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setCommentEditorExpanded(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [commentEditorExpanded])
+
   if (appQuery.isLoading) return <Loading />
 
   const loadError =
@@ -153,10 +172,10 @@ export function ApplicationDetail() {
       <div>
         <Message type="error" message={loadError ?? 'Application not found'} />
         <div className="action-row">
-          <button type="button" onClick={() => void appQuery.refetch()}>
+          <button type="button" className="btn-secondary" onClick={() => void appQuery.refetch()}>
             Retry
           </button>
-          <Link to={user?.role === 'REVIEWER' ? '/review' : '/'}>Back to list</Link>
+          <Link to={user?.role === 'REVIEWER' ? '/review/queue' : '/'}>Back to list</Link>
         </div>
       </div>
     )
@@ -194,6 +213,47 @@ export function ApplicationDetail() {
     transitionMutation.mutate({ action, comment: comment || undefined })
   }
 
+  const reviewerActionButtons = (
+    <>
+      {app.status === 'SUBMITTED' && (
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => runTransition('start_review')}
+          disabled={transitionMutation.isPending}
+        >
+          Put under review
+        </button>
+      )}
+      <button
+        type="button"
+        className="btn-success"
+        onClick={() => runTransition('approve')}
+        disabled={transitionMutation.isPending}
+      >
+        Approve
+      </button>
+      <button
+        type="button"
+        className="btn-danger"
+        onClick={() => runTransition('reject', true)}
+        disabled={transitionMutation.isPending || !comment.trim()}
+      >
+        Reject
+      </button>
+      {app.status === 'UNDER_REVIEW' && (
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => runTransition('return', true)}
+          disabled={transitionMutation.isPending || !comment.trim()}
+        >
+          Return for changes
+        </button>
+      )}
+    </>
+  )
+
   return (
     <div>
       <div className="page-header">
@@ -213,8 +273,6 @@ export function ApplicationDetail() {
         <p className="muted">The highlighted step shows where this application is right now.</p>
         <StatusPipeline status={app.status} auditLogs={auditLogs} />
       </section>
-
-      {!canEdit && <AttachmentPanel applicationId={app.id} fileName={app.file_name} />}
 
       {isApplicantOwner && !isDraft && (
         <section className="card status-summary">
@@ -267,7 +325,7 @@ export function ApplicationDetail() {
       )}
 
       <section className="card detail-grid">
-        <div>
+        <div className="detail-panel">
           <h2>Details</h2>
           {canEdit ? (
             <form onSubmit={handleEditSubmit} className="form-card">
@@ -330,7 +388,7 @@ export function ApplicationDetail() {
                 }}
               />
               <p className="muted">Upload a PDF, DOC, DOCX, PNG, or JPG (max 10 MB).</p>
-              <button type="submit" disabled={updateMutation.isPending}>
+              <button type="submit" className="btn-secondary" disabled={updateMutation.isPending}>
                 Save changes
               </button>
               <p className="muted submit-hint">
@@ -338,7 +396,7 @@ export function ApplicationDetail() {
               </p>
               <button
                 type="button"
-                className="button-primary"
+                className="btn-primary"
                 disabled={submitMutation.isPending || !canSubmit}
                 onClick={() => submitMutation.mutate()}
               >
@@ -361,62 +419,76 @@ export function ApplicationDetail() {
           )}
         </div>
 
-        {canReview && (
-          <div className="reviewer-panel">
-            <h2>Reviewer actions</h2>
-            <p className="muted">
-              Review this submission and put it on hold, reject it, or approve it.
-            </p>
-            <label htmlFor="review-comment">Comment (required for reject / return)</label>
+        {!canEdit && (
+          <AttachmentPanel
+            embedded
+            applicationId={app.id}
+            fileName={app.file_name}
+          />
+        )}
+      </section>
+
+      {canReview && (
+        <section className="card reviewer-panel">
+          <h2>Reviewer actions</h2>
+          <p className="muted">
+            Review this submission and put it on hold, reject it, or approve it.
+          </p>
+          <div className="review-comment-field">
+            <div className="review-comment-toolbar">
+              <label htmlFor="review-comment">Comment (required for reject / return)</label>
+              <button
+                type="button"
+                className="btn-extend-editor"
+                onClick={() => setCommentEditorExpanded(true)}
+              >
+                Extend editor
+              </button>
+            </div>
             <textarea
               id="review-comment"
-              rows={3}
+              className="review-comment-textarea"
+              rows={6}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
-            <div className="action-row">
-              {(app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW') && (
-                <>
-                  {app.status === 'SUBMITTED' && (
-                    <button
-                      type="button"
-                      onClick={() => runTransition('start_review')}
-                      disabled={transitionMutation.isPending}
-                    >
-                      Put under review
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="button-success"
-                    onClick={() => runTransition('approve')}
-                    disabled={transitionMutation.isPending}
-                  >
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    className="button-danger"
-                    onClick={() => runTransition('reject', true)}
-                    disabled={transitionMutation.isPending || !comment.trim()}
-                  >
-                    Reject
-                  </button>
-                  {app.status === 'UNDER_REVIEW' && (
-                    <button
-                      type="button"
-                      onClick={() => runTransition('return', true)}
-                      disabled={transitionMutation.isPending || !comment.trim()}
-                    >
-                      Return for changes
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
           </div>
-        )}
-      </section>
+          <div className="action-row">{reviewerActionButtons}</div>
+        </section>
+      )}
+
+      {commentEditorExpanded && (
+        <div
+          className="comment-editor-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="comment-editor-title"
+        >
+          <div className="comment-editor-fullscreen">
+            <div className="comment-editor-header">
+              <div>
+                <h2 id="comment-editor-title">Reviewer comment</h2>
+                <p className="muted">{app.title}</p>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => setCommentEditorExpanded(false)}
+              >
+                Close editor
+              </button>
+            </div>
+            <textarea
+              id="review-comment-expanded"
+              className="review-comment-textarea review-comment-textarea--fullscreen"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              autoFocus
+            />
+            <div className="action-row comment-editor-actions">{reviewerActionButtons}</div>
+          </div>
+        </div>
+      )}
 
       {!(isApplicantOwner && !isDraft) && (
         <section className="card">
