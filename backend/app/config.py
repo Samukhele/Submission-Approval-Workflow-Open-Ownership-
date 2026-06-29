@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +11,10 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
-    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_origins: str = Field(
+        default="http://localhost:5173,http://127.0.0.1:5173",
+        description="Comma-separated allowed browser origins (env: CORS_ORIGINS)",
+    )
 
     storage_backend: Literal["local", "google_drive", "azure_blob"] = "local"
     upload_dir: str = "uploads"
@@ -32,6 +35,13 @@ class Settings(BaseSettings):
         "image/png",
         "image/jpeg",
     ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: str | None) -> str:
+        if value is None or not str(value).strip():
+            return "http://localhost:5173,http://127.0.0.1:5173"
+        return str(value).strip()
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -131,7 +141,12 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins: list[str] = []
+        for origin in self.cors_origins.split(","):
+            cleaned = origin.strip().rstrip("/")
+            if cleaned and cleaned not in origins:
+                origins.append(cleaned)
+        return origins
 
 
 settings = Settings()

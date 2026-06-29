@@ -38,6 +38,7 @@ def health():
     return {
         "status": "ok",
         "storage_backend": storage,
+        "cors_origins": settings.cors_origin_list,
         "google_drive_configured": storage == "google_drive"
         and bool(settings.google_drive_folder_id)
         and bool(

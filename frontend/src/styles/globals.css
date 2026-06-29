@@ -115,6 +115,11 @@
 }
 
 [data-theme='light'] .sidebar .nav-link.active,
+[data-theme='light'] .sidebar .nav-link.active:hover {
+  background: var(--ds-primary) !important;
+}
+
+[data-theme='light'] .sidebar .nav-link.active,
 [data-theme='light'] .sidebar .nav-link.active:hover,
 [data-theme='light'] .sidebar .nav-link.active span,
 [data-theme='light'] .sidebar .nav-link.active .nav-icon {

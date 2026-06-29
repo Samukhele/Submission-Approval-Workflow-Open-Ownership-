@@ -9,7 +9,9 @@ import {
   Sun,
 } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { useTheme } from '../../lib/theme-context'
 import { REVIEWER_STAT_CARDS } from '../StatCard'
@@ -21,18 +23,32 @@ type NavItem = {
   icon: typeof LayoutDashboard
   exact?: boolean
   status?: ApplicationStatus
+  match?: 'applicant-home'
 }
 
 export function Sidebar() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const location = useLocation()
+  const { id: applicationId } = useParams()
   const [searchParams] = useSearchParams()
   const [collapsed, setCollapsed] = useState(false)
 
+  const onApplicationDetail =
+    !!applicationId &&
+    applicationId !== 'new' &&
+    location.pathname.startsWith('/applications/')
+
+  const appQuery = useQuery({
+    queryKey: ['application', applicationId],
+    queryFn: () => api.getApplication(applicationId!),
+    enabled: onApplicationDetail,
+    staleTime: 30_000,
+  })
+
   const applicantNav: NavItem[] = [
-    { to: '/', label: 'My applications', icon: FolderKanban },
-    { to: '/applications/new', label: 'New application', icon: FilePlus },
+    { to: '/', label: 'My applications', icon: FolderKanban, match: 'applicant-home' },
+    { to: '/applications/new', label: 'New application', icon: FilePlus, exact: true },
   ]
 
   const reviewerNav: NavItem[] = [
@@ -49,11 +65,25 @@ export function Sidebar() {
 
   function isActive(item: NavItem) {
     if (item.exact) return location.pathname === item.to
+
     if (item.status) {
-      if (location.pathname !== '/review/queue') return false
-      const currentStatus = searchParams.get('status') ?? 'SUBMITTED'
-      return currentStatus === item.status
+      if (location.pathname === '/review/queue') {
+        const currentStatus = searchParams.get('status') ?? 'SUBMITTED'
+        return currentStatus === item.status
+      }
+      if (onApplicationDetail && appQuery.data?.status === item.status) {
+        return true
+      }
+      return false
     }
+
+    if ('match' in item && item.match === 'applicant-home') {
+      return (
+        location.pathname === '/' ||
+        (onApplicationDetail && user?.role === 'APPLICANT')
+      )
+    }
+
     if (item.to === '/') return location.pathname === '/'
     return location.pathname.startsWith(item.to)
   }
