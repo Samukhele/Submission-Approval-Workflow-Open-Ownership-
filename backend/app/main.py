@@ -43,6 +43,7 @@ def health():
         and bool(
             settings.google_drive_credentials_json or settings.google_drive_credentials_file
         ),
+        "azure_blob_configured": storage == "azure_blob" and settings.azure_blob_configured,
     }
 
 

@@ -27,10 +27,12 @@ services:
       - key: CORS_ORIGINS
         sync: false
       - key: STORAGE_BACKEND
-        value: google_drive
-      - key: GOOGLE_DRIVE_CREDENTIALS_JSON
+        value: azure_blob
+      - key: AZURE_BLOB_ACCOUNT
         sync: false
-      - key: GOOGLE_DRIVE_FOLDER_ID
+      - key: AZURE_BLOB_CONTAINER
+        sync: false
+      - key: AZURE_BLOB_SAS_TOKEN
         sync: false
 
   - type: web

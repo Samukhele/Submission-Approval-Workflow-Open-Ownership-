@@ -131,6 +131,77 @@ class GoogleDriveStorageBackend(StorageBackend):
         self._service.files().delete(fileId=storage_ref, supportsAllDrives=True).execute()
 
 
+class AzureBlobStorageBackend(StorageBackend):
+    """Azure Blob Storage for application attachments."""
+
+    def __init__(self) -> None:
+        from azure.storage.blob import BlobServiceClient
+
+        if not settings.azure_blob_account:
+            raise RuntimeError("AZURE_BLOB_ACCOUNT is required for Azure Blob storage")
+        if not settings.azure_blob_container:
+            raise RuntimeError("AZURE_BLOB_CONTAINER is required for Azure Blob storage")
+        if not settings.azure_blob_sas_token:
+            raise RuntimeError("AZURE_BLOB_SAS_TOKEN is required for Azure Blob storage")
+
+        account_url = f"https://{settings.azure_blob_account}.blob.core.windows.net"
+        self._service = BlobServiceClient(
+            account_url=account_url,
+            credential=settings.azure_blob_sas_token,
+        )
+        self._container = settings.azure_blob_container
+
+    @staticmethod
+    def _blob_name(application_id: str, filename: str) -> str:
+        safe_name = Path(filename).name
+        return f"applications/{application_id}/{safe_name}"
+
+    def _blob_client(self, blob_name: str):
+        return self._service.get_blob_client(
+            container=self._container,
+            blob=blob_name,
+        )
+
+    def upload(
+        self,
+        content: bytes,
+        filename: str,
+        mime_type: str,
+        application_id: str,
+    ) -> str:
+        from azure.storage.blob import ContentSettings
+
+        blob_name = self._blob_name(application_id, filename)
+        self._blob_client(blob_name).upload_blob(
+            content,
+            overwrite=True,
+            content_settings=ContentSettings(content_type=mime_type),
+        )
+        return blob_name
+
+    def download(self, storage_ref: str) -> tuple[bytes, str]:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            blob = self._blob_client(storage_ref)
+            props = blob.get_blob_properties()
+            data = blob.download_blob().readall()
+            mime_type = (
+                props.content_settings.content_type
+                if props.content_settings and props.content_settings.content_type
+                else "application/octet-stream"
+            )
+            return data, mime_type
+        except ResourceNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "File not found", "code": "NOT_FOUND"},
+            ) from exc
+
+    def delete(self, storage_ref: str) -> None:
+        self._blob_client(storage_ref).delete_blob()
+
+
 _storage_backend: StorageBackend | None = None
 
 
@@ -139,6 +210,8 @@ def get_storage_backend() -> StorageBackend:
     if _storage_backend is None:
         if settings.storage_backend == "google_drive":
             _storage_backend = GoogleDriveStorageBackend()
+        elif settings.storage_backend == "azure_blob":
+            _storage_backend = AzureBlobStorageBackend()
         else:
             _storage_backend = LocalStorageBackend()
     return _storage_backend

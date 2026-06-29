@@ -13,11 +13,16 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    storage_backend: Literal["local", "google_drive"] = "local"
+    storage_backend: Literal["local", "google_drive", "azure_blob"] = "local"
     upload_dir: str = "uploads"
     google_drive_credentials_file: str | None = None
     google_drive_credentials_json: str | None = None
     google_drive_folder_id: str | None = None
+
+    # Azure Blob Storage (SAS token auth)
+    azure_blob_account: str | None = None
+    azure_blob_container: str | None = None
+    azure_blob_sas_token: str | None = None
 
     max_upload_size_bytes: int = 10 * 1024 * 1024
     allowed_mime_types: list[str] = [
@@ -62,6 +67,28 @@ class Settings(BaseSettings):
             return None
         return stripped
 
+    @field_validator(
+        "azure_blob_account",
+        "azure_blob_container",
+        "azure_blob_sas_token",
+        mode="before",
+    )
+    @classmethod
+    def normalize_azure_placeholder(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped or stripped.startswith("your_"):
+            return None
+        return stripped
+
+    @field_validator("azure_blob_sas_token", mode="after")
+    @classmethod
+    def normalize_sas_token(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.lstrip("?")
+
     @model_validator(mode="after")
     def validate_google_drive_config(self) -> "Settings":
         if self.storage_backend != "google_drive":
@@ -76,6 +103,31 @@ class Settings(BaseSettings):
                 "is required when STORAGE_BACKEND=google_drive"
             )
         return self
+
+    @model_validator(mode="after")
+    def validate_azure_blob_config(self) -> "Settings":
+        if self.storage_backend != "azure_blob":
+            return self
+        missing: list[str] = []
+        if not self.azure_blob_account:
+            missing.append("AZURE_BLOB_ACCOUNT")
+        if not self.azure_blob_container:
+            missing.append("AZURE_BLOB_CONTAINER")
+        if not self.azure_blob_sas_token:
+            missing.append("AZURE_BLOB_SAS_TOKEN")
+        if missing:
+            raise ValueError(
+                f"{', '.join(missing)} required when STORAGE_BACKEND=azure_blob"
+            )
+        return self
+
+    @property
+    def azure_blob_configured(self) -> bool:
+        return bool(
+            self.azure_blob_account
+            and self.azure_blob_container
+            and self.azure_blob_sas_token
+        )
 
     @property
     def cors_origin_list(self) -> list[str]:
