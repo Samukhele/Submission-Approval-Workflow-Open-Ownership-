@@ -2,6 +2,120 @@
 
 A full-stack application for generic request submission and approval. Applicants create and submit applications; reviewers approve, reject, or return them for changes. The backend enforces a strict status workflow with an audit trail on every transition.
 
+## Live demo
+
+The app is hosted on Render — no local setup required to try it.
+
+| | URL |
+|---|---|
+| **Application** | https://submission-approval-workflow-open-sfh1.onrender.com/ |
+| **API** | https://submission-approval-workflow-open.onrender.com |
+| **API docs (Swagger)** | https://submission-approval-workflow-open.onrender.com/docs |
+
+### Test credentials
+
+| Email | Password | Role |
+|---|---|---|
+| `applicant@demo.com` | `password123` | Applicant — create, submit, and revise applications |
+| `reviewer@demo.com` | `password123` | Reviewer — approve, reject, or return applications |
+
+> **Note:** Render free-tier services sleep after ~15 minutes idle. The first load may take 30–60 seconds.
+
+## How to run locally
+
+These steps start **PostgreSQL**, the **backend API**, and the **frontend** on your machine.
+
+### Prerequisites
+
+- Docker & Docker Compose
+- Node.js 20+
+
+### 1. Configure environment
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env` for **local Docker Compose** (database hostname must be `db`, not `localhost`, because the API runs inside Docker):
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@db:5432/approval_workflow
+SECRET_KEY=dev-secret-change-in-production
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+STORAGE_BACKEND=local
+UPLOAD_DIR=uploads
+```
+
+### 2. Start database and backend
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+This will:
+
+- Start **PostgreSQL 16** on port `5432`
+- Build and start the **API** on http://localhost:8000
+- Run **Alembic migrations** and **seed demo users** on startup
+
+Verify:
+
+- API docs: http://localhost:8000/docs
+- Health: http://localhost:8000/health
+
+> After changing backend code, rebuild: `docker compose up --build`. The API container does not hot-reload source files.
+
+### 3. Start frontend
+
+In a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 — Vite proxies `/api` to the backend at `http://localhost:8000`.
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Dev server at http://localhost:5173 |
+| `npm run build` | Production build → `frontend/dist/` |
+| `npm run preview` | Preview production build locally |
+
+### 4. Run tests
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest -v
+```
+
+Expected: **24 tests** (20 state-machine unit tests + 4 API integration tests).
+
+Or inside Docker:
+
+```bash
+docker compose exec api pytest -v
+```
+
+**What the tests cover:**
+
+- Legal and illegal state-machine transitions (`tests/test_state_machine.py`)
+- API authorization — e.g. applicant attempting approve receives **403** (`tests/test_api_auth.py`)
+- Reviewer visibility rules, audit trail access, and return-from-submitted workflow
+
+To verify **structured error handling** manually, use Swagger at http://localhost:8000/docs:
+
+- **403** — applicant calls `POST .../transition` with `approve`
+- **409** — reviewer calls `approve` on a `DRAFT` application
+- **404** — reviewer requests another user's unpublished draft
+- **422** — submit or create with missing required fields
+
+All errors return JSON shaped like `{ "detail": { "error", "code", "details" } }` (or top-level `{ "error", "code", "details" }` for validation).
+
 ## Stack
 
 | Layer | Technology |
@@ -42,100 +156,6 @@ A full-stack application for generic request submission and approval. Applicants
 - Sidebar highlights the active section in orange (including on application detail pages)
 - Status badges with distinct styling per state (returned = dark grey)
 - Application pipeline with animated active step (under review / returned)
-
-## Quick start
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Node.js 20+ (for the frontend)
-
-### 1. Configure environment
-
-```bash
-cp backend/.env.example backend/.env
-```
-
-For local development, use local file storage (default in `.env.example` comments):
-
-```bash
-STORAGE_BACKEND=local
-UPLOAD_DIR=uploads
-```
-
-Set `DATABASE_URL` in `backend/.env` to your Postgres instance (local Docker, Neon, Supabase, or Render). The API container loads this file via `docker-compose.yml`.
-
-For Render Postgres, include SSL:
-
-```bash
-DATABASE_URL=postgresql://USER:PASSWORD@host:5432/dbname?sslmode=require
-```
-
-### 2. Start backend
-
-```bash
-docker compose up --build
-```
-
-This will:
-
-- Start the API on http://localhost:8000 (using `backend/.env` for database and storage config)
-- Run Alembic migrations on startup
-- Seed demo users
-- Optionally start a local Postgres container on port `5432` (use its URL in `.env` if you prefer local DB over a hosted one)
-
-API docs: http://localhost:8000/docs
-
-Health check: http://localhost:8000/health
-
-> **Note:** After changing backend code, rebuild the API image: `docker compose up --build`. The API container does not mount source code for hot reload.
-
-### 3. Start frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:5173 — the Vite dev server proxies `/api` to the backend.
-
-**Frontend scripts:**
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Dev server at http://localhost:5173 |
-| `npm run build` | Production build → `frontend/dist/` |
-| `npm run preview` | Preview production build locally |
-
-**Frontend environment (production / Render only):** set before `npm run build`:
-
-```bash
-VITE_API_URL=https://your-api.onrender.com
-```
-
-Local development does not need this — Vite proxies API requests to `http://localhost:8000`.
-
-### 4. Run tests
-
-```bash
-cd backend
-pip install -r requirements.txt
-pytest -v
-```
-
-Or inside Docker:
-
-```bash
-docker compose exec api pytest -v
-```
-
-## Demo accounts
-
-| Email | Password | Role |
-|---|---|---|
-| `applicant@demo.com` | `password123` | Applicant |
-| `reviewer@demo.com` | `password123` | Reviewer |
 
 ## Frontend routes
 
@@ -182,6 +202,8 @@ stateDiagram-v2
 
 ## Data model
 
+Three core tables. Status changes are **never** updated in place without an audit record — every transition appends a row to `audit_logs`.
+
 ```
 users
   id, email, password_hash, role, created_at
@@ -196,11 +218,17 @@ audit_logs
   from_status, to_status, comment, created_at
 ```
 
+### Key design decisions
+
+- **`applications.status`** holds the current workflow state (`DRAFT` → `SUBMITTED` → `UNDER_REVIEW` → `APPROVED` / `REJECTED`). Returning for changes sets status back to `DRAFT` so only drafts remain editable.
+- **`audit_logs`** is append-only history. The UI derives **Returned for changes** from the latest return transition (no separate `RETURNED` column in the database).
+- **`users.role`** drives authorization at the API layer (`APPLICANT` vs `REVIEWER`), combined with ownership checks on applications.
+- **Attachments** store a path/key in `file_path`; bytes live in Azure Blob (production) or local disk (development).
+- **Categories** are a fixed enum: `it`, `marketing`, `finance`, `hr`, `operations`.
+
 **API response fields (applications):** `status` (stored enum) and `display_status` (UI status, may be `RETURNED`).
 
 **API response fields (audit):** `to_status` (stored enum) and `display_to_status` (shows `RETURNED` on return transitions).
-
-**Categories:** `it`, `marketing`, `finance`, `hr`, `operations`
 
 **Submit validation:** at least one of `amount` or `requested_date` is required when submitting.
 
@@ -277,7 +305,7 @@ python -m app.seed
 
 ## Deploy to Render
 
-Production uses three Render resources: **PostgreSQL**, a **Web Service** (FastAPI API via Docker), and a **Static Site** (React frontend). File attachments use **Azure Blob Storage**.
+Production is live at the URLs in [Live demo](#live-demo) above. Deployment uses **PostgreSQL**, a **Web Service** (FastAPI API via Docker), and a **Static Site** (React frontend). File attachments use **Azure Blob Storage**.
 
 See [`DEPLOY_RENDER.md`](DEPLOY_RENDER.md) for the full step-by-step checklist.
 
@@ -287,8 +315,8 @@ The repo includes [`render.yaml`](render.yaml). In Render:
 
 1. **New +** → **Blueprint** → select the repo
 2. Set secrets when prompted:
-   - `CORS_ORIGINS` — frontend URL (e.g. `https://approval-workflow.onrender.com`)
-   - `VITE_API_URL` — API URL (e.g. `https://approval-workflow-api.onrender.com`)
+   - `CORS_ORIGINS` — `https://submission-approval-workflow-open-sfh1.onrender.com`
+   - `VITE_API_URL` — `https://submission-approval-workflow-open.onrender.com`
    - `AZURE_BLOB_ACCOUNT`, `AZURE_BLOB_CONTAINER`, `AZURE_BLOB_SAS_TOKEN`
 3. Apply the blueprint
 
@@ -306,7 +334,7 @@ The repo includes [`render.yaml`](render.yaml). In Render:
 |---|---|
 | `DATABASE_URL` | Render Postgres internal URL |
 | `SECRET_KEY` | random secret |
-| `CORS_ORIGINS` | frontend URL (no trailing slash) |
+| `CORS_ORIGINS` | `https://submission-approval-workflow-open-sfh1.onrender.com` |
 | `STORAGE_BACKEND` | `azure_blob` |
 | `AZURE_BLOB_ACCOUNT` | storage account name |
 | `AZURE_BLOB_CONTAINER` | container name |
@@ -316,14 +344,14 @@ The repo includes [`render.yaml`](render.yaml). In Render:
 
 | Key | Value |
 |---|---|
-| `VITE_API_URL` | API URL (no trailing slash) |
+| `VITE_API_URL` | `https://submission-approval-workflow-open.onrender.com` |
 
-Deploy the **API first**, then the **static site**, then update `CORS_ORIGINS` on the API and redeploy.
+Deploy the **API first**, then the **static site**, then update `CORS_ORIGINS` on the API and redeploy if URLs change.
 
-### Verify
+### Verify production
 
 ```bash
-curl https://YOUR-API.onrender.com/health
+curl https://submission-approval-workflow-open.onrender.com/health
 ```
 
 Expected:
@@ -393,6 +421,8 @@ DEPLOY_RENDER.md      Render deployment checklist
 
 ## Design decisions & trade-offs
 
+Summary of **why** the system is built this way. See [Data model](#data-model) for schema detail.
+
 ### State machine as pure logic
 
 Transition rules live in `app/services/state_machine.py` with **no database imports**. This keeps unit tests fast and guarantees the same rules apply everywhere. HTTP layers map errors to `403` (forbidden role/owner) or `409` (illegal transition).
@@ -417,29 +447,42 @@ Both applicant and reviewer lists support **status** and **category** filters vi
 
 Audit logs store `from_status` and `to_status` at transition time. The API adds `display_to_status` so return events read as “Returned for changes” in the UI. Application rows reflect current stored state; the audit trail is the source of truth for history.
 
+### Structured errors
+
+Validation (`422`), forbidden actions (`403`), illegal transitions (`409`), and not-found (`404`) all return predictable JSON with `error`, `code`, and optional `details` — tested at the state-machine layer and demonstrated via API integration tests.
+
 ## Tests
 
+Run: `cd backend && pytest -v` (see [How to run locally](#how-to-run-locally)).
+
 - **20 state machine unit tests** — legal transitions (including return from submitted/under review), illegal transitions, comment requirements, terminal states
-- **4 API integration tests** — authorization, audit trail, return-from-submitted workflow
+- **4 API integration tests** — authorization (403 on unauthorized approve), reviewer draft visibility (404), audit trail, return-from-submitted workflow
 
 CI runs on every push/PR to `main` (`.github/workflows/ci.yml`).
 
 ## Use of AI tools
 
-This project was built with assistance from **Cursor AI**. AI was used for:
+This project was built with assistance from **Cursor AI** (AI-assisted IDE). AI was used for:
 
 - Initial project scaffolding and boilerplate
 - State machine and test case drafting
 - React component structure, UI styling, and reviewer/applicant UX
 - Return workflow, display status, filters, and pipeline UX
 - Azure Blob Storage integration and Render deployment prep
+- README and deployment documentation
 
 All code was reviewed and adjusted manually. The state machine rules, authorization model, and workflow behavior were verified against the assignment spec before submission.
 
 ## What I would add with more time
+
+Trade-offs accepted for scope — improvements with more time:
 
 - Pagination and search on application lists
 - Email or in-app notifications on status change
 - Refresh tokens and rate limiting
 - Azure SAS token rotation and managed identity (instead of long-lived SAS)
 - Backend source volume mount or dev reload in Docker for faster local iteration
+- Dedicated `RETURNED` database status and revision counter if reporting needs grow beyond display-status derivation
+
+
+
