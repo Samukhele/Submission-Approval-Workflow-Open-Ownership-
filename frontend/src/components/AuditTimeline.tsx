@@ -1,4 +1,5 @@
 import type { AuditLog } from '../types'
+import { getAuditLogToDisplayStatus } from '../types'
 import { StatusBadge } from './StatusBadge'
 
 export function AuditTimeline({ logs }: { logs: AuditLog[] }) {
@@ -19,7 +20,7 @@ export function AuditTimeline({ logs }: { logs: AuditLog[] }) {
           <div className="audit-transition">
             <StatusBadge status={log.from_status} />
             <span aria-hidden="true">→</span>
-            <StatusBadge status={log.to_status} />
+            <StatusBadge status={getAuditLogToDisplayStatus(log)} />
           </div>
           {log.comment && <p className="audit-comment">{log.comment}</p>}
         </li>

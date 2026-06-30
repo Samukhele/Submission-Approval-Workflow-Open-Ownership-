@@ -3,29 +3,34 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { EmptyState, Loading } from '../components/Feedback'
 import { StatusBadge } from '../components/StatusBadge'
-import { REVIEWER_STAT_CARDS } from '../components/StatCard'
 import {
   CATEGORIES,
   formatApiError,
   formatCategoryDisplay,
+  getDisplayStatus,
   REVIEWER_STATUSES,
   type ApplicationCategory,
-  type ApplicationStatus,
+  type DisplayStatus,
 } from '../types'
 
-const STATUS_LABELS = Object.fromEntries(
-  REVIEWER_STAT_CARDS.map((card) => [card.status, card.label]),
-) as Record<ApplicationStatus, string>
+const STATUS_LABELS: Record<DisplayStatus, string> = {
+  DRAFT: 'Draft',
+  SUBMITTED: 'Submitted',
+  UNDER_REVIEW: 'Under review',
+  RETURNED: 'Returned',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+}
 
-function getEmptyMessage(status: ApplicationStatus | ''): string {
+function getEmptyMessage(status: DisplayStatus | ''): string {
   if (status === 'SUBMITTED') return 'No applications newly submitted.'
+  if (status === 'RETURNED') return 'No applications returned for changes.'
   return 'No applications match this filter.'
 }
 
 export function ReviewerQueue() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const statusFilter =
-    (searchParams.get('status') as ApplicationStatus | null) ?? 'SUBMITTED'
+  const statusFilter = (searchParams.get('status') as DisplayStatus | null) ?? 'SUBMITTED'
   const categoryFilter = searchParams.get('category') as ApplicationCategory | null
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
@@ -38,7 +43,7 @@ export function ReviewerQueue() {
     refetchOnMount: 'always',
   })
 
-  function updateFilters(updates: { status?: ApplicationStatus | ''; category?: ApplicationCategory | '' }) {
+  function updateFilters(updates: { status?: DisplayStatus | ''; category?: ApplicationCategory | '' }) {
     const next = new URLSearchParams(searchParams)
 
     if (updates.status !== undefined) {
@@ -74,13 +79,13 @@ export function ReviewerQueue() {
               id="status-filter"
               value={statusFilter}
               onChange={(e) =>
-                updateFilters({ status: e.target.value as ApplicationStatus | '' })
+                updateFilters({ status: e.target.value as DisplayStatus | '' })
               }
             >
               <option value="">All submitted</option>
               {REVIEWER_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s.replace('_', ' ')}
+                  {STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -133,7 +138,7 @@ export function ReviewerQueue() {
                       {app.owner_email ?? 'Unknown'} · {formatCategoryDisplay(app.category)}
                     </p>
                   </div>
-                  <StatusBadge status={app.status} />
+                  <StatusBadge status={getDisplayStatus(app)} />
                 </Link>
                 <Link to={`/applications/${app.id}`} className="btn-secondary btn-sm">
                   View

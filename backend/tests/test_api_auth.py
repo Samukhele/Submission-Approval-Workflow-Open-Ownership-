@@ -215,3 +215,54 @@ def test_applicant_can_view_audit_trail(client, users):
     assert audit_logs[0]["from_status"] == "DRAFT"
     assert audit_logs[0]["to_status"] == "SUBMITTED"
     assert audit_logs[1]["to_status"] == "APPROVED"
+
+
+def test_reviewer_can_return_from_submitted(client, users):
+    applicant_token = login(client, "applicant@test.com", "password123")
+    reviewer_token = login(client, "reviewer@test.com", "password123")
+
+    create_resp = client.post(
+        "/api/v1/applications",
+        headers={"Authorization": f"Bearer {applicant_token}"},
+        json={
+            "title": "Return from submitted test",
+            "category": "finance",
+            "description": "Needs quotation",
+            "amount": 10,
+        },
+    )
+    assert create_resp.status_code == 201
+    app_id = create_resp.json()["id"]
+
+    submit_resp = client.post(
+        f"/api/v1/applications/{app_id}/submit",
+        headers={"Authorization": f"Bearer {applicant_token}"},
+    )
+    assert submit_resp.status_code == 200
+    assert submit_resp.json()["status"] == "SUBMITTED"
+
+    return_resp = client.post(
+        f"/api/v1/applications/{app_id}/transition",
+        headers={"Authorization": f"Bearer {reviewer_token}"},
+        json={"action": "return", "comment": "Send quotation of trip"},
+    )
+    assert return_resp.status_code == 200
+    body = return_resp.json()
+    assert body["status"] == "DRAFT"
+    assert body["display_status"] == "RETURNED"
+
+    returned_list = client.get(
+        "/api/v1/applications?status=RETURNED",
+        headers={"Authorization": f"Bearer {reviewer_token}"},
+    )
+    assert returned_list.status_code == 200
+    assert app_id in {app["id"] for app in returned_list.json()}
+
+    audit_resp = client.get(
+        f"/api/v1/applications/{app_id}/audit",
+        headers={"Authorization": f"Bearer {reviewer_token}"},
+    )
+    assert audit_resp.status_code == 200
+    return_log = audit_resp.json()[-1]
+    assert return_log["to_status"] == "DRAFT"
+    assert return_log["display_to_status"] == "RETURNED"

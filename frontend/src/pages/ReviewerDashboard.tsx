@@ -3,13 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { Loading, Message } from '../components/Feedback'
 import { REVIEWER_STAT_CARDS, StatCard } from '../components/StatCard'
-import { formatApiError, type ApplicationStatus } from '../types'
+import { formatApiError, getDisplayStatus, type Application, type DisplayStatus } from '../types'
 
-function countByStatus(
-  apps: { status: ApplicationStatus }[],
-  status: ApplicationStatus,
-): number {
-  return apps.filter((app) => app.status === status).length
+function countByDisplayStatus(apps: Application[], status: DisplayStatus): number {
+  return apps.filter((app) => getDisplayStatus(app) === status).length
 }
 
 export function ReviewerDashboard() {
@@ -61,7 +58,7 @@ export function ReviewerDashboard() {
           <StatCard
             key={card.status}
             {...card}
-            value={countByStatus(apps, card.status)}
+            value={countByDisplayStatus(apps, card.status)}
           />
         ))}
       </div>

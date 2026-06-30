@@ -1,4 +1,5 @@
-import type { ApplicationStatus, AuditLog } from '../types'
+import type { ApplicationStatus, AuditLog, DisplayStatus } from '../types'
+import { isReturnAuditLog } from '../types'
 
 interface PipelineStep {
   key: string
@@ -16,14 +17,26 @@ function wasSubmitted(auditLogs: AuditLog[]): boolean {
   return auditLogs.some((log) => log.to_status === 'SUBMITTED')
 }
 
+function isReturnedApplication(
+  displayStatus: DisplayStatus | undefined,
+  status: ApplicationStatus,
+  auditLogs: AuditLog[],
+): boolean {
+  if (displayStatus === 'RETURNED') return true
+  if (status !== 'DRAFT' || !wasSubmitted(auditLogs)) return false
+  return auditLogs.some(isReturnAuditLog)
+}
+
 export function getPipelineSteps(
   status: ApplicationStatus,
   auditLogs: AuditLog[],
+  displayStatus?: DisplayStatus,
 ): PipelineStep[] | null {
   if (status === 'DRAFT' && !wasSubmitted(auditLogs)) {
     return null
   }
 
+  const isReturned = isReturnedApplication(displayStatus, status, auditLogs)
   const visitedReview = wasUnderReview(auditLogs)
   const outcomeLabel =
     status === 'APPROVED'
@@ -33,12 +46,14 @@ export function getPipelineSteps(
         : 'Approved / Rejected'
 
   const submittedState = (): PipelineStep['state'] => {
+    if (isReturned) return 'completed'
     if (status === 'SUBMITTED') return 'active'
     if (status === 'DRAFT') return wasSubmitted(auditLogs) ? 'completed' : 'pending'
     return 'completed'
   }
 
   const reviewState = (): PipelineStep['state'] => {
+    if (isReturned) return 'completed'
     if (status === 'UNDER_REVIEW') return 'active'
     if (status === 'SUBMITTED') return 'pending'
     if (status === 'DRAFT') return visitedReview ? 'completed' : 'pending'
@@ -54,21 +69,49 @@ export function getPipelineSteps(
     return 'pending'
   }
 
-  return [
+  const steps: PipelineStep[] = [
     { key: 'submitted', label: 'Submitted', state: submittedState() },
-    { key: 'under_review', label: 'Under Review', state: reviewState() },
-    { key: 'outcome', label: outcomeLabel, state: outcomeState() },
   ]
+
+  const showReviewStep =
+    !isReturned || visitedReview || status === 'UNDER_REVIEW'
+
+  if (showReviewStep) {
+    steps.push({
+      key: 'under_review',
+      label: 'Under Review',
+      state: reviewState(),
+    })
+  }
+
+  if (isReturned) {
+    steps.push({ key: 'returned', label: 'Returned', state: 'active' })
+  }
+
+  steps.push({ key: 'outcome', label: outcomeLabel, state: outcomeState() })
+
+  return steps
+}
+
+function connectorIsDone(state: PipelineStep['state']): boolean {
+  return (
+    state === 'completed' ||
+    state === 'active' ||
+    state === 'approved' ||
+    state === 'rejected'
+  )
 }
 
 export function StatusPipeline({
   status,
   auditLogs,
+  displayStatus,
 }: {
   status: ApplicationStatus
   auditLogs: AuditLog[]
+  displayStatus?: DisplayStatus
 }) {
-  const steps = getPipelineSteps(status, auditLogs)
+  const steps = getPipelineSteps(status, auditLogs, displayStatus)
 
   if (!steps) {
     return (
@@ -92,12 +135,7 @@ export function StatusPipeline({
           {index < steps.length - 1 && (
             <div
               className={`pipeline-connector ${
-                step.state === 'completed' ||
-                step.state === 'active' ||
-                step.state === 'approved' ||
-                step.state === 'rejected'
-                  ? 'pipeline-connector-done'
-                  : ''
+                connectorIsDone(step.state) ? 'pipeline-connector-done' : ''
               }`}
               aria-hidden="true"
             />

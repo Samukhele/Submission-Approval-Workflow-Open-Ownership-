@@ -64,6 +64,7 @@ class ApplicationResponse(BaseModel):
     requested_date: date | None
     file_name: str | None
     status: ApplicationStatus
+    display_status: str
     created_at: datetime
     updated_at: datetime
     owner_email: str | None = None
@@ -83,6 +84,7 @@ class AuditLogResponse(BaseModel):
     actor_email: str | None = None
     from_status: ApplicationStatus
     to_status: ApplicationStatus
+    display_to_status: str
     comment: str | None
     created_at: datetime
 

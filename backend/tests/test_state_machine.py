@@ -33,6 +33,12 @@ class TestLegalTransitions:
             == "REJECTED"
         )
 
+    def test_submitted_return_to_draft_with_comment(self):
+        assert (
+            transition("SUBMITTED", "return", "REVIEWER", False, "Please revise")
+            == "DRAFT"
+        )
+
     def test_under_review_return_to_draft_with_comment(self):
         assert (
             transition("UNDER_REVIEW", "return", "REVIEWER", False, "Fix amount")

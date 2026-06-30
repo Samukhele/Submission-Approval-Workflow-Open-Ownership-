@@ -15,14 +15,14 @@ import { api } from '../../api/client'
 import { useAuth } from '../../auth/AuthContext'
 import { useTheme } from '../../lib/theme-context'
 import { REVIEWER_STAT_CARDS } from '../StatCard'
-import type { ApplicationStatus } from '../../types'
+import { getDisplayStatus, type DisplayStatus } from '../../types'
 
 type NavItem = {
   to: string
   label: string
   icon: typeof LayoutDashboard
   exact?: boolean
-  status?: ApplicationStatus
+  status?: DisplayStatus
   match?: 'applicant-home'
 }
 
@@ -71,8 +71,12 @@ export function Sidebar() {
         const currentStatus = searchParams.get('status') ?? 'SUBMITTED'
         return currentStatus === item.status
       }
-      if (onApplicationDetail && appQuery.data?.status === item.status) {
-        return true
+      if (onApplicationDetail && appQuery.data) {
+        const display = getDisplayStatus(appQuery.data)
+        if (item.status === 'RETURNED') {
+          return display === 'RETURNED'
+        }
+        return display === item.status
       }
       return false
     }

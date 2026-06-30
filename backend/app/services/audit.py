@@ -4,6 +4,25 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import Application, ApplicationStatus, AuditLog, User
 
+RETURN_SOURCE_STATUSES = frozenset(
+    {ApplicationStatus.UNDER_REVIEW, ApplicationStatus.SUBMITTED}
+)
+
+
+def display_to_status(
+    from_status: ApplicationStatus,
+    to_status: ApplicationStatus,
+    comment: str | None,
+) -> str:
+    """UI label for audit trail; return transitions show RETURNED instead of DRAFT."""
+    if (
+        to_status == ApplicationStatus.DRAFT
+        and from_status in RETURN_SOURCE_STATUSES
+        and comment
+    ):
+        return "RETURNED"
+    return to_status.value
+
 
 def create_audit_log(
     db: Session,

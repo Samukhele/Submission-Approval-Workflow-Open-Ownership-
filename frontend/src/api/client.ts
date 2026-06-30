@@ -141,6 +141,11 @@ export const api = {
       method: 'POST',
     }),
 
+  reviseApplication: (id: string) =>
+    request<Application>(`/api/v1/applications/${id}/revise`, {
+      method: 'POST',
+    }),
+
   transitionApplication: (
     id: string,
     action: string,

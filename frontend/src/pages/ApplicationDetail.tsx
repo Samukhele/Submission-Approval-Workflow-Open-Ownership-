@@ -8,7 +8,7 @@ import { FileAttachment, AttachmentPanel } from '../components/FileAttachment'
 import { EmptyState, Loading, Message } from '../components/Feedback'
 import { StatusBadge } from '../components/StatusBadge'
 import { StatusPipeline } from '../components/StatusPipeline'
-import { CATEGORIES, getCategoryLabel, type ApplicationCategory } from '../types'
+import { CATEGORIES, getCategoryLabel, getDisplayStatus, isReturnAuditLog, type ApplicationCategory } from '../types'
 
 export function ApplicationDetail() {
   const { id } = useParams<{ id: string }>()
@@ -186,7 +186,10 @@ export function ApplicationDetail() {
     !!app.owner_id &&
     user.id.toLowerCase() === app.owner_id.toLowerCase()
   const isDraft = app.status === 'DRAFT'
-  const canEdit = user?.role === 'APPLICANT' && isOwner && isDraft
+  const displayStatus = getDisplayStatus(app)
+  const isReturned = displayStatus === 'RETURNED'
+  const isRejected = displayStatus === 'REJECTED'
+  const canEdit = user?.role === 'APPLICANT' && isOwner && isDraft && !isRejected
   const canSubmit =
     canEdit && !!(editAmount || editDate || app.amount || app.requested_date)
   const canReview =
@@ -196,7 +199,10 @@ export function ApplicationDetail() {
   const auditLogs = auditQuery.data ?? []
   const latestReturnComment = [...auditLogs]
     .reverse()
-    .find((log) => log.to_status === 'DRAFT' && log.from_status !== 'DRAFT')?.comment
+    .find((log) => isReturnAuditLog(log))?.comment
+  const latestRejectComment = [...auditLogs]
+    .reverse()
+    .find((log) => log.to_status === 'REJECTED')?.comment
 
   function handleEditSubmit(e: FormEvent) {
     e.preventDefault()
@@ -241,7 +247,7 @@ export function ApplicationDetail() {
       >
         Reject
       </button>
-      {app.status === 'UNDER_REVIEW' && (
+      {(app.status === 'SUBMITTED' || app.status === 'UNDER_REVIEW') && (
         <button
           type="button"
           className="btn-secondary"
@@ -262,7 +268,7 @@ export function ApplicationDetail() {
             ← Back
           </Link>
           <h1>{app.title}</h1>
-          <StatusBadge status={app.status} />
+          <StatusBadge status={displayStatus} />
         </div>
       </div>
 
@@ -271,14 +277,18 @@ export function ApplicationDetail() {
       <section className="card pipeline-card">
         <h2>Application pipeline</h2>
         <p className="muted">The highlighted step shows where this application is right now.</p>
-        <StatusPipeline status={app.status} auditLogs={auditLogs} />
+        <StatusPipeline
+          status={app.status}
+          auditLogs={auditLogs}
+          displayStatus={displayStatus}
+        />
       </section>
 
-      {isApplicantOwner && !isDraft && (
+      {isApplicantOwner && !isDraft && !isReturned && (
         <section className="card status-summary">
           <h2>Your application status</h2>
           <p className="muted">
-            Current status: <StatusBadge status={app.status} />
+            Current status: <StatusBadge status={displayStatus} />
           </p>
           {app.status === 'SUBMITTED' && (
             <p>Your application has been submitted and is waiting for a reviewer.</p>
@@ -289,28 +299,45 @@ export function ApplicationDetail() {
           {app.status === 'APPROVED' && (
             <p className="status-message-success">Your application has been approved.</p>
           )}
-          {app.status === 'REJECTED' && (
-            <p className="status-message-error">
-              Your application was rejected. See the status history below for the
-              reviewer&apos;s comment.
+        </section>
+      )}
+
+      {isApplicantOwner && isRejected && (
+        <section className="card status-summary returned-notice">
+          <h2>Application rejected</h2>
+          <p className="muted">
+            Current status: <StatusBadge status={displayStatus} />
+          </p>
+          <p className="status-message-error">
+            A reviewer rejected this application. See the status history below for their
+            comment.
+          </p>
+          {latestRejectComment && (
+            <p className="audit-comment">
+              <strong>Reviewer comment:</strong> {latestRejectComment}
             </p>
           )}
         </section>
       )}
 
-      {isApplicantOwner && isDraft && latestReturnComment && (
+      {isApplicantOwner && isReturned && (
         <section className="card status-summary returned-notice">
           <h2>Returned for changes</h2>
+          <p className="muted">
+            Current status: <StatusBadge status={displayStatus} />
+          </p>
           <p className="status-message-error">
             A reviewer returned this application. Please update it and submit again.
           </p>
-          <p className="audit-comment">
-            <strong>Reviewer comment:</strong> {latestReturnComment}
-          </p>
+          {latestReturnComment && (
+            <p className="audit-comment">
+              <strong>Reviewer comment:</strong> {latestReturnComment}
+            </p>
+          )}
         </section>
       )}
 
-      {isApplicantOwner && !isDraft && (
+      {isApplicantOwner && (!isDraft || isRejected) && (
         <section className="card">
           <h2>Status history</h2>
           <p className="muted">Track every update made to your application.</p>
@@ -428,11 +455,27 @@ export function ApplicationDetail() {
         )}
       </section>
 
+      {user?.role === 'REVIEWER' && isReturned && (
+        <section className="card status-summary returned-notice">
+          <h2>Returned — awaiting applicant</h2>
+          <p className="muted">
+            You returned this application for changes. The applicant can revise and
+            resubmit when ready.
+          </p>
+          {latestReturnComment && (
+            <p className="audit-comment">
+              <strong>Your return comment:</strong> {latestReturnComment}
+            </p>
+          )}
+        </section>
+      )}
+
       {canReview && (
         <section className="card reviewer-panel">
           <h2>Reviewer actions</h2>
           <p className="muted">
-            Review this submission and put it on hold, reject it, or approve it.
+            Review this submission — approve, reject, or return for changes (comment
+            required for reject and return).
           </p>
           <div className="review-comment-field">
             <div className="review-comment-toolbar">
@@ -490,7 +533,7 @@ export function ApplicationDetail() {
         </div>
       )}
 
-      {!(isApplicantOwner && !isDraft) && (
+      {!(isApplicantOwner && (!isDraft || isRejected)) && (
         <section className="card">
           <h2>{isApplicantOwner ? 'Status history' : 'Audit trail'}</h2>
           {isApplicantOwner && (

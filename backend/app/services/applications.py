@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
-from app.models import Application, ApplicationCategory, ApplicationStatus, User, UserRole
+from app.models import Application, ApplicationCategory, ApplicationStatus, AuditLog, User, UserRole
 from app.schemas import ApplicationCreate, ApplicationUpdate, SubmitValidation
 from app.services import audit as audit_service
 from app.services.state_machine import (
@@ -19,8 +19,56 @@ from app.services.state_machine import (
 )
 from app.services.storage import get_storage_backend
 
+RETURN_SOURCE_STATUSES = frozenset(
+    {ApplicationStatus.UNDER_REVIEW, ApplicationStatus.SUBMITTED}
+)
 
-def _application_to_dict(app: Application) -> dict:
+
+def _was_submitted(logs: list[AuditLog]) -> bool:
+    return any(log.to_status == ApplicationStatus.SUBMITTED for log in logs)
+
+
+def sync_status_from_audit(db: Session, app: Application) -> str:
+    """Align stored status with audit trail and compute UI display status."""
+    logs = audit_service.get_audit_logs(db, app.id)
+    if logs:
+        last = logs[-1]
+        if (
+            last.to_status == ApplicationStatus.REJECTED
+            and app.status != ApplicationStatus.REJECTED
+        ):
+            app.status = ApplicationStatus.REJECTED
+            db.commit()
+            db.refresh(app)
+        elif (
+            last.to_status == ApplicationStatus.APPROVED
+            and app.status != ApplicationStatus.APPROVED
+        ):
+            app.status = ApplicationStatus.APPROVED
+            db.commit()
+            db.refresh(app)
+
+    if app.status == ApplicationStatus.REJECTED:
+        return ApplicationStatus.REJECTED.value
+    if app.status == ApplicationStatus.APPROVED:
+        return ApplicationStatus.APPROVED.value
+
+    if app.status == ApplicationStatus.DRAFT and logs and _was_submitted(logs):
+        last = logs[-1]
+        if last.to_status == ApplicationStatus.REJECTED:
+            return ApplicationStatus.REJECTED.value
+        if (
+            last.to_status == ApplicationStatus.DRAFT
+            and last.from_status in RETURN_SOURCE_STATUSES
+            and last.comment
+        ):
+            return "RETURNED"
+
+    return app.status.value
+
+
+def _application_to_dict(app: Application, db: Session | None = None) -> dict:
+    display_status = sync_status_from_audit(db, app) if db is not None else app.status.value
     return {
         "id": app.id,
         "owner_id": app.owner_id,
@@ -31,6 +79,7 @@ def _application_to_dict(app: Application) -> dict:
         "requested_date": app.requested_date,
         "file_name": app.file_name,
         "status": app.status,
+        "display_status": display_status,
         "created_at": app.created_at,
         "updated_at": app.updated_at,
         "owner_email": app.owner.email if app.owner else None,
@@ -52,19 +101,24 @@ def get_application_or_404(db: Session, application_id: uuid.UUID) -> Applicatio
     return app
 
 
-def can_view(user: User, app: Application) -> bool:
+def can_view(user: User, app: Application, db: Session | None = None) -> bool:
     if user.role == UserRole.REVIEWER:
-        return app.status != ApplicationStatus.DRAFT
+        if app.status != ApplicationStatus.DRAFT:
+            return True
+        if db is not None:
+            return sync_status_from_audit(db, app) == "RETURNED"
+        return False
     return app.owner_id == user.id
 
 
-def ensure_can_view(user: User, app: Application) -> None:
+def ensure_can_view(user: User, app: Application, db: Session | None = None) -> None:
     if user.role == UserRole.REVIEWER and app.status == ApplicationStatus.DRAFT:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "Application not found", "code": "NOT_FOUND"},
-        )
-    if not can_view(user, app):
+        if db is None or sync_status_from_audit(db, app) != "RETURNED":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "Application not found", "code": "NOT_FOUND"},
+            )
+    elif not can_view(user, app, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"error": "Access denied", "code": "FORBIDDEN"},
@@ -82,26 +136,37 @@ def ensure_owner(user: User, app: Application) -> None:
 def list_applications(
     db: Session,
     user: User,
-    status_filter: ApplicationStatus | None = None,
+    status_filter: str | None = None,
     category_filter: ApplicationCategory | None = None,
 ) -> list[dict]:
     query = db.query(Application).options(joinedload(Application.owner))
     if user.role == UserRole.APPLICANT:
         query = query.filter(Application.owner_id == user.id)
-    else:
-        # Reviewers only see applications that have been submitted.
-        query = query.filter(Application.status != ApplicationStatus.DRAFT)
-    if status_filter:
-        if (
-            user.role == UserRole.REVIEWER
-            and status_filter == ApplicationStatus.DRAFT
-        ):
-            return []
-        query = query.filter(Application.status == status_filter)
     if category_filter:
         query = query.filter(Application.category == category_filter)
     apps = query.order_by(Application.updated_at.desc()).all()
-    return [_application_to_dict(app) for app in apps]
+
+    results: list[dict] = []
+    for app in apps:
+        row = _application_to_dict(app, db)
+        if user.role == UserRole.REVIEWER:
+            if row["display_status"] == "DRAFT":
+                continue
+        results.append(row)
+
+    if status_filter == "RETURNED":
+        return [row for row in results if row["display_status"] == "RETURNED"]
+    if status_filter:
+        try:
+            enum_status = ApplicationStatus(status_filter)
+        except ValueError:
+            return []
+        return [
+            row
+            for row in results
+            if row["status"] == enum_status and row["display_status"] != "RETURNED"
+        ]
+    return results
 
 
 def create_application(db: Session, user: User, data: ApplicationCreate) -> dict:
@@ -118,7 +183,36 @@ def create_application(db: Session, user: User, data: ApplicationCreate) -> dict
     db.commit()
     db.refresh(app)
     app = get_application_or_404(db, app.id)
-    return _application_to_dict(app)
+    return _application_to_dict(app, db)
+
+
+def revise_application(db: Session, user: User, app: Application) -> dict:
+    """Create a new draft from a rejected application so the applicant can try again."""
+    ensure_owner(user, app)
+    display = sync_status_from_audit(db, app)
+    if display != ApplicationStatus.REJECTED.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Only rejected applications can be revised into a new draft",
+                "code": "FORBIDDEN",
+            },
+        )
+
+    new_app = Application(
+        owner_id=user.id,
+        title=app.title,
+        category=app.category,
+        description=app.description,
+        amount=app.amount,
+        requested_date=app.requested_date,
+        status=ApplicationStatus.DRAFT,
+    )
+    db.add(new_app)
+    db.commit()
+    db.refresh(new_app)
+    new_app = get_application_or_404(db, new_app.id)
+    return _application_to_dict(new_app, db)
 
 
 def update_application(
@@ -140,7 +234,7 @@ def update_application(
 
     db.commit()
     db.refresh(app)
-    return _application_to_dict(app)
+    return _application_to_dict(app, db)
 
 
 def submit_application(db: Session, user: User, app: Application) -> dict:
@@ -176,7 +270,7 @@ def submit_application(db: Session, user: User, app: Application) -> dict:
     )
     db.commit()
     db.refresh(app)
-    return _application_to_dict(app)
+    return _application_to_dict(app, db)
 
 
 def perform_transition(
@@ -214,7 +308,7 @@ def perform_transition(
     )
     db.commit()
     db.refresh(app)
-    return _application_to_dict(app)
+    return _application_to_dict(app, db)
 
 
 def _raise_state_machine_http(exc: StateMachineError) -> None:
@@ -291,11 +385,13 @@ def save_upload(
     db.commit()
     db.refresh(app)
     app = get_application_or_404(db, app.id)
-    return _application_to_dict(app)
+    return _application_to_dict(app, db)
 
 
-def get_file_content(user: User, app: Application) -> tuple[bytes, str, str]:
-    ensure_can_view(user, app)
+def get_file_content(
+    db: Session, user: User, app: Application
+) -> tuple[bytes, str, str]:
+    ensure_can_view(user, app, db)
     if not app.file_path or not app.file_name:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

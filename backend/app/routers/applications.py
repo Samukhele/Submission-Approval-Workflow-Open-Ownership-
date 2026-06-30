@@ -25,7 +25,7 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 def list_applications(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-    status: ApplicationStatus | None = Query(default=None),
+    status: str | None = Query(default=None),
     category: ApplicationCategory | None = Query(default=None),
 ):
     return app_service.list_applications(db, current_user, status, category)
@@ -47,8 +47,8 @@ def get_application(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     app = app_service.get_application_or_404(db, application_id)
-    app_service.ensure_can_view(current_user, app)
-    return app_service._application_to_dict(app)
+    app_service.ensure_can_view(current_user, app, db)
+    return app_service._application_to_dict(app, db)
 
 
 @router.patch("/{application_id}", response_model=ApplicationResponse)
@@ -70,6 +70,16 @@ def submit_application(
 ):
     app = app_service.get_application_or_404(db, application_id)
     return app_service.submit_application(db, current_user, app)
+
+
+@router.post("/{application_id}/revise", response_model=ApplicationResponse, status_code=201)
+def revise_application(
+    application_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_applicant)],
+):
+    app = app_service.get_application_or_404(db, application_id)
+    return app_service.revise_application(db, current_user, app)
 
 
 @router.post("/{application_id}/transition", response_model=ApplicationResponse)
@@ -104,7 +114,7 @@ def download_file(
     download: bool = Query(default=False),
 ):
     app = app_service.get_application_or_404(db, application_id)
-    content, mime_type, filename = app_service.get_file_content(current_user, app)
+    content, mime_type, filename = app_service.get_file_content(db, current_user, app)
     disposition = "attachment" if download else "inline"
     return Response(
         content=content,
@@ -120,7 +130,7 @@ def get_audit_trail(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     app = app_service.get_application_or_404(db, application_id)
-    app_service.ensure_can_view(current_user, app)
+    app_service.ensure_can_view(current_user, app, db)
     logs = audit_service.get_audit_logs(db, application_id)
     return [
         {
@@ -130,6 +140,9 @@ def get_audit_trail(
             "actor_email": log.actor.email if log.actor else None,
             "from_status": log.from_status,
             "to_status": log.to_status,
+            "display_to_status": audit_service.display_to_status(
+                log.from_status, log.to_status, log.comment
+            ),
             "comment": log.comment,
             "created_at": log.created_at,
         }
